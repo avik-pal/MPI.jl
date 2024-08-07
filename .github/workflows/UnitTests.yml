@@ -61,7 +61,7 @@ jobs:
       with:
         arch: ${{ matrix.julia_arch }}
         version: ${{ matrix.julia_version }}
-    - uses: julia-actions/cache@v1
+    - uses: julia-actions/cache@v2
 
     - name: add MPIPreferences
       shell: julia --color=yes --project=. {0}
@@ -71,8 +71,9 @@ jobs:
 
     - uses: julia-actions/julia-runtest@v1
     - uses: julia-actions/julia-processcoverage@v1
-    - uses: codecov/codecov-action@v3
+    - uses: codecov/codecov-action@v4
       with:
+        token: ${{ secrets.CODECOV_TOKEN }}
         files: lcov.info
     - uses: julia-actions/julia-uploadcoveralls@v1
       continue-on-error: true
@@ -112,7 +113,7 @@ jobs:
       with:
         arch: ${{ matrix.julia_arch }}
         version: ${{ matrix.julia_version }}
-    - uses: julia-actions/cache@v1
+    - uses: julia-actions/cache@v2
 
     - name: add MPIPreferences
       shell: julia --color=yes --project=. {0}
@@ -172,7 +173,7 @@ jobs:
         version: ${{ matrix.julia_version }}
         arch: ${{ matrix.julia_arch }}
 
-    - uses: julia-actions/cache@v1
+    - uses: julia-actions/cache@v2
     - name: add MPIPreferences
       shell: julia --color=yes --project=. {0}
       run: |
@@ -227,7 +228,7 @@ jobs:
       with:
         version: ${{ matrix.julia_version }}
 
-    - uses: julia-actions/cache@v1
+    - uses: julia-actions/cache@v2
     - name: add MPIPreferences
       shell: julia --color=yes --project=. {0}
       run: |
@@ -270,7 +271,7 @@ jobs:
       with:
         version: "1"
 
-    - uses: julia-actions/cache@v1
+    - uses: julia-actions/cache@v2
     - name: add MPIPreferences
       shell: julia --color=yes --project=. {0}
       run: |
@@ -313,7 +314,7 @@ jobs:
       with:
         version: ${{ matrix.julia_version }}
 
-    - uses: julia-actions/cache@v1
+    - uses: julia-actions/cache@v2
     - name: add MPIPreferences
       shell: julia --color=yes --project=. {0}
       run: |
@@ -369,7 +370,7 @@ jobs:
       with:
         version: ${{ matrix.julia_version }}
 
-    - uses: julia-actions/cache@v1
+    - uses: julia-actions/cache@v2
 
     - name: add MPIPreferences
       shell: julia --color=yes --project=. {0}
@@ -442,7 +443,7 @@ jobs:
       with:
         version: ${{ matrix.julia_version }}
 
-    - uses: julia-actions/cache@v1
+    - uses: julia-actions/cache@v2
 
     - name: add MPIPreferences
       shell: julia --color=yes --project=. {0}
@@ -509,7 +510,7 @@ jobs:
       with:
         version: ${{ matrix.julia_version }}
 
-    - uses: julia-actions/cache@v1
+    - uses: julia-actions/cache@v2
 
     - name: add MPIPreferences
       shell: julia --color=yes --project=. {0}
@@ -561,7 +562,7 @@ jobs:
       with:
         version: "1"
 
-    - uses: julia-actions/cache@v1
+    - uses: julia-actions/cache@v2
     - name: add MPIPreferences
       shell: julia --color=yes --project=. {0}
       run: |
@@ -610,7 +611,7 @@ jobs:
       with:
         version: "1"
 
-    - uses: julia-actions/cache@v1
+    - uses: julia-actions/cache@v2
     - name: add MPIPreferences
       shell: julia --color=yes --project=. {0}
       run: |
