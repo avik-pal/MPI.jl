@@ -16,10 +16,11 @@ const DEPS_LOADED = Ref(false)
 
 The currently selected binary. The possible values are
 
+- `"MPIABI_jll"`: use the binary provided by [MPIABI_jll](https://github.com/JuliaBinaryWrappers/MPIABI_jll.jl)
 - `"MPICH_jll"`: use the binary provided by [MPICH_jll](https://github.com/JuliaBinaryWrappers/MPICH_jll.jl)
-- `"OpenMPI_jll"`: use the binary provided by [OpenMPI_jll](https://github.com/JuliaBinaryWrappers/OpenMPI_jll.jl)
-- `"MicrosoftMPI_jll"`: use binary provided by [MicrosoftMPI_jll](https://github.com/JuliaBinaryWrappers/MicrosoftMPI_jll.jl/)
 - `"MPItrampoline_jll"`: use the binary provided by [MPItrampoline_jll](https://github.com/JuliaBinaryWrappers/MPItrampoline_jll.jl/)
+- `"MicrosoftMPI_jll"`: use binary provided by [MicrosoftMPI_jll](https://github.com/JuliaBinaryWrappers/MicrosoftMPI_jll.jl/)
+- `"OpenMPI_jll"`: use the binary provided by [OpenMPI_jll](https://github.com/JuliaBinaryWrappers/OpenMPI_jll.jl)
 - `"system"`: use a system-provided binary.
 
 """
@@ -30,22 +31,25 @@ const binary = @load_preference("binary", Sys.iswindows() ? "MicrosoftMPI_jll" :
 
 The ABI (application binary interface) of the currently selected binary. Supported values are:
 
-- `"MPICH"`: MPICH-compatible ABI (https://www.mpich.org/abi/)
-- `"OpenMPI"`: Open MPI compatible ABI (Open MPI, IBM Spectrum MPI, Fujitsu MPI)
-- `"MicrosoftMPI"`: Microsoft MPI
-- `"MPItrampoline"`: MPItrampoline
 - `"HPE MPT"`: HPE MPT
+- `"MPIABI"`: MPI-ABI-compatible ABI (https://www.mpi-form.org/)
+- `"MPICH"`: MPICH-compatible ABI (https://www.mpich.org/abi/)
+- `"MPItrampoline"`: MPItrampoline
+- `"MicrosoftMPI"`: Microsoft MPI
+- `"OpenMPI"`: Open MPI compatible ABI (Open MPI, IBM Spectrum MPI, Fujitsu MPI)
 """
 const abi = if binary == "system"
     @load_preference("abi")
-elseif binary == "MicrosoftMPI_jll"
-    "MicrosoftMPI"
+elseif binary == "MPIABI_jll"
+    "MPIABI"
 elseif binary == "MPICH_jll"
     "MPICH"
-elseif binary == "OpenMPI_jll"
-    "OpenMPI"
 elseif binary == "MPItrampoline_jll"
     "MPItrampoline"
+elseif binary == "MicrosoftMPI_jll"
+    "MicrosoftMPI"
+elseif binary == "OpenMPI_jll"
+    "OpenMPI"
 else
     error("Unknown binary: $binary")
 end
@@ -66,16 +70,17 @@ Switches the underlying MPI implementation to one provided by JLL packages. A
 restart of Julia is required for the changes to take effect.
 
 Available options are:
-- `"MicrosoftMPI_jll"` (Only option and default on Windows)
+- `"MPIABI_jll"`
 - `"MPICH_jll"` (Default on all other platform)
-- `"OpenMPI_jll"`
 - `"MPItrampoline_jll"`
+- `"MicrosoftMPI_jll"` (Only option and default on Windows)
+- `"OpenMPI_jll"`
 
 The `export_prefs` option determines whether the preferences being set should be
 stored within `LocalPreferences.toml` or `Project.toml`.
 """
 function use_jll_binary(binary = Sys.iswindows() ? "MicrosoftMPI_jll" : "MPICH_jll"; export_prefs=false, force=true)
-    known_binaries = ("MicrosoftMPI_jll", "MPICH_jll", "OpenMPI_jll", "MPItrampoline_jll")
+    known_binaries = ("MPIABI_jll", "MPICH_jll", "MicrosoftMPI_jll", "MPItrampoline_jll", "OpenMPI_jll")
     binary in known_binaries ||
         error("""
               Unknown jll: $binary.
@@ -94,14 +99,6 @@ function use_jll_binary(binary = Sys.iswindows() ? "MicrosoftMPI_jll" : "MPICH_j
         force=force
     )
 
-    if VERSION <= v"1.6.5" || VERSION == v"1.7.0"
-        @warn """
-        Due to a bug in Julia (until 1.6.5 and 1.7.1), setting preferences in transitive dependencies
-        is broken (https://github.com/JuliaPackaging/Preferences.jl/issues/24). To fix this either update
-        your version of Julia, or add MPIPreferences as a direct dependency to your project.
-        """
-    end
-
     if binary == MPIPreferences.binary
         @info "MPIPreferences unchanged" binary
     else
@@ -118,7 +115,7 @@ end
 
 """
     use_system_binary(;
-        library_names = ["libmpi", "libmpi_ibm", "msmpi", "libmpich", "libmpi_cray", "libmpitrampoline"],
+        library_names = ["libmpi", "libmpi_abi", "libmpi_ibm", "msmpi", "libmpich", "libmpi_cray", "libmpitrampoline"],
         extra_paths = String[],
         mpiexec = "mpiexec",
         abi = nothing,
@@ -162,7 +159,7 @@ Options:
 - `force`: if `true`, the preferences are set even if they are already set.
 """
 function use_system_binary(;
-        library_names=["libmpi", "libmpi_ibm", "msmpi", "libmpich", "libmpi_cray", "libmpitrampoline"],
+        library_names=["libmpi", "libmpi_abi", "libmpi_ibm", "msmpi", "libmpich", "libmpi_cray", "libmpitrampoline"],
         extra_paths=String[],
         mpiexec="mpiexec",
         abi=nothing,
@@ -224,14 +221,6 @@ function use_system_binary(;
         force=force
     )
 
-    if VERSION <= v"1.6.5" || VERSION == v"1.7.0"
-        @warn """
-        Due to a bug in Julia (until 1.6.5 and 1.7.1), setting preferences in transitive dependencies
-        is broken (https://github.com/JuliaPackaging/Preferences.jl/issues/24). To fix this either update
-        your version of Julia, or add MPIPreferences as a direct dependency to your project.
-        """
-    end
-
     if binary == MPIPreferences.binary && abi == MPIPreferences.abi && libmpi == System.libmpi && mpiexec == System.mpiexec_path
         @info "MPIPreferences unchanged" binary libmpi abi mpiexec preloads preloads_env_switch
     else
@@ -266,10 +255,24 @@ function identify_implementation_version_abi(version_string::AbstractString)
     impl = "unknown"
     version = v"0"
 
-    if startswith(version_string, "MPICH")
+    if startswith(version_string, "MPICH") && !contains(version_string, "--enable-mpi-abi")
         impl = "MPICH"
         # "MPICH Version:\t%s\n" /  "MPICH2 Version:\t%s\n"
         if (m = match(r"^MPICH2? Version:\s+(\d+.\d+(?:.\d+)?\w*)\n", version_string)) !== nothing
+            version = VersionNumber(m.captures[1])
+        end
+
+    elseif startswith(version_string, "MPICH") && contains(version_string, "--enable-mpi-abi")
+        impl = "MPIABI"
+        # This should be the ABI version, not the MPICH version.
+        # MPICH doesn't output the ABI version, but we know it implements v1 (the only ABI version currently specified).
+        version = v"1"
+
+    elseif startswith(version_string, "mpi_abi_wrapper")
+        impl = "MPIABI"
+        # This should be the ABI version, not the MPICH version.
+        # "mpi_abi_wrapper 1.2.0 (MPI 5.0 standard ABI, MPI_ABI_VERSION 1.0)\nwrapping:\nOpen MPI v5.0.10, package: Debian OpenMPI, ident: 5.0.10, repo rev: v5.0.10, Feb 23, 2026"
+        if (m = match(r"MPI_ABI_VERSION (\d+.\d+)", version_string)) !== nothing
             version = VersionNumber(m.captures[1])
         end
 
@@ -355,6 +358,8 @@ function identify_implementation_version_abi(version_string::AbstractString)
         # https://www.mpich.org/abi/
         impl == "HPE HMPT")
         abi = "MPICH"
+    elseif impl == "MPIABI"
+        abi = "MPIABI"
     elseif impl == "OpenMPI" || impl == "IBMSpectrumMPI" || impl == "FujitsuMPI"
         abi = "OpenMPI"
     elseif impl == "MicrosoftMPI"

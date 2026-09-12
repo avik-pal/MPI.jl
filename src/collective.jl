@@ -182,6 +182,10 @@ function scatter(objs::Union{AbstractVector, Nothing}, comm::Comm; root::Integer
     isroot = Comm_rank(comm) == root
 
     if isroot
+        if isnothing(objs)
+            throw(ArgumentError("Argument objs must not be `nothing` on the root rank."))
+        end
+
         if length(objs) != Comm_size(comm)
             throw(ArgumentError("Length of argument objs ($(length(objs))) != number of ranks in comm ($(Comm_size(comm)))."))
         end
@@ -556,7 +560,7 @@ If only one buffer `sendrecvbuf` is used, then data is overwritten.
 $(_doc_external("MPI_Alltoall"))
 """
 function Alltoall!(sendbuf::UBuffer, recvbuf::UBuffer, comm::Comm)
-    if sendbuf.data !== API.MPI_IN_PLACE[] && sendbuf.nchunks !== nothing
+    if !(sendbuf.data isa InPlace) && sendbuf.nchunks !== nothing
         @assert sendbuf.nchunks >= Comm_size(comm)
     end
     if recvbuf.nchunks !== nothing
@@ -603,8 +607,11 @@ Alltoall(sendbuf::UBuffer,  comm::Comm) =
 
 """
     Alltoallv!(sendbuf::VBuffer, recvbuf::VBuffer, comm::Comm)
+    Alltoallv!(sendrecvbuf::VBuffer, comm::Comm)
 
 Similar to [`Alltoall!`](@ref), except with different size chunks per process.
+
+If only one buffer `sendrecvbuf` is used, then data is overwritten.
 
 # See also
 - [`VBuffer`](@ref)
@@ -613,7 +620,7 @@ Similar to [`Alltoall!`](@ref), except with different size chunks per process.
 $(_doc_external("MPI_Alltoallv"))
 """
 function Alltoallv!(sendbuf::VBuffer, recvbuf::VBuffer, comm::Comm)
-    if sendbuf.data !== API.MPI_IN_PLACE[]
+    if !(sendbuf.data isa InPlace)
         @assert length(sendbuf.counts) >= Comm_size(comm)
     end
     @assert length(recvbuf.counts) >= Comm_size(comm)
@@ -627,6 +634,10 @@ function Alltoallv!(sendbuf::VBuffer, recvbuf::VBuffer, comm::Comm)
 
     return recvbuf.data
 end
+Alltoallv!(sendbuf::InPlace, recvbuf::VBuffer, comm::Comm) =
+    Alltoallv!(VBuffer(IN_PLACE), recvbuf, comm)
+Alltoallv!(sendrecvbuf::VBuffer, comm::Comm) =
+    Alltoallv!(IN_PLACE, sendrecvbuf, comm)
 
 
 ### Reduce/Scan
@@ -905,10 +916,13 @@ function Neighbor_alltoall!(sendbuf::UBuffer, recvbuf::UBuffer, graph_comm::Comm
     return recvbuf.data
 end
 
+# The MPI standard does not allow `MPI_IN_PLACE` in neighborhood collectives,
+# and implementations are not required to detect the error (e.g. MPICH
+# crashes), so reject it in the wrapper.
 Neighbor_alltoall!(sendbuf::InPlace, recvbuf::UBuffer, graph_comm::Comm) =
-    Neighbor_alltoall!(UBuffer(IN_PLACE), recvbuf, graph_comm)
+    throw(ArgumentError("MPI_IN_PLACE is not allowed in neighborhood collectives"))
 Neighbor_alltoall!(sendrecvbuf::UBuffer, graph_comm::Comm) =
-    Neighbor_alltoall!(IN_PLACE, sendrecvbuf, comm)
+    Neighbor_alltoall!(IN_PLACE, sendrecvbuf, graph_comm)
 Neighbor_alltoall(sendbuf::UBuffer, graph_comm::Comm) =
     Neighbor_alltoall!(sendbuf, similar(sendbuf), graph_comm)
 
@@ -958,6 +972,11 @@ Neighbor_allgather!(sendbuf::Union{Ref,AbstractArray}, recvbuf::AbstractArray, g
     Neighbor_allgather!(sendbuf, UBuffer(recvbuf, length(sendbuf)), graph_comm)
 
 
+# The MPI standard does not allow `MPI_IN_PLACE` in neighborhood collectives,
+# and implementations are not required to detect the error (e.g. MPICH
+# crashes), so reject it in the wrapper.
+Neighbor_allgather!(sendbuf::InPlace, recvbuf::UBuffer, graph_comm::Comm) =
+    throw(ArgumentError("MPI_IN_PLACE is not allowed in neighborhood collectives"))
 Neighbor_allgather!(sendrecvbuf::UBuffer, graph_comm::Comm) =
     Neighbor_allgather!(IN_PLACE, sendrecvbuf, graph_comm)
 
@@ -986,5 +1005,10 @@ Neighbor_allgatherv!(sendbuf::Union{Ref,AbstractArray}, recvbuf::AbstractArray, 
     Neighbor_allgatherv!(sendbuf, VBuffer(recvbuf, length(sendbuf)), graph_comm)
 
 
+# The MPI standard does not allow `MPI_IN_PLACE` in neighborhood collectives,
+# and implementations are not required to detect the error (e.g. MPICH
+# crashes), so reject it in the wrapper.
+Neighbor_allgatherv!(sendbuf::InPlace, recvbuf::VBuffer, graph_comm::Comm) =
+    throw(ArgumentError("MPI_IN_PLACE is not allowed in neighborhood collectives"))
 Neighbor_allgatherv!(sendrecvbuf::VBuffer, graph_comm::Comm) =
     Neighbor_allgatherv!(IN_PLACE, sendrecvbuf, graph_comm)

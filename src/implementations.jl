@@ -98,16 +98,16 @@ function versioninfo(io::IO=stdout)
     println(io, "Package versions")
     println(io, "  MPI.jl:             ", PkgVersion.@Version)
     println(io, "  MPIPreferences.jl:  ", PkgVersion.Version(MPIPreferences))
-    if MPIPreferences.binary == "MPICH_jll"
+    if MPIPreferences.binary == "MPIABI_jll"
+        println(io, "  MPIABI_jll:         ", PkgVersion.Version(API.MPIABI_jll))
+    elseif MPIPreferences.binary == "MPICH_jll"
         println(io, "  MPICH_jll:          ", PkgVersion.Version(API.MPICH_jll))
-    elseif MPIPreferences.binary == "OpenMPI_jll"
-        println(io, "  OpenMPI_jll:        ", PkgVersion.Version(API.OpenMPI_jll))
-    elseif MPIPreferences.binary == "OpenMPI_jll"
-        println(io, "  OpenMPI_jll:        ", PkgVersion.Version(API.OpenMPI_jll))
-    elseif MPIPreferences.binary == "MicrosoftMPI_jll"
-        println(io, "  MicrosoftMPI_jll:   ", PkgVersion.Version(API.MicrosoftMPI_jll))
     elseif MPIPreferences.binary == "MPItrampoline_jll"
         println(io, "  MPItrampoline_jll   ", PkgVersion.Version(API.MPItrampoline_jll))
+    elseif MPIPreferences.binary == "MicrosoftMPI_jll"
+        println(io, "  MicrosoftMPI_jll:   ", PkgVersion.Version(API.MicrosoftMPI_jll))
+    elseif MPIPreferences.binary == "OpenMPI_jll"
+        println(io, "  OpenMPI_jll:        ", PkgVersion.Version(API.OpenMPI_jll))
     end
 
     println(io)
@@ -118,5 +118,10 @@ function versioninfo(io::IO=stdout)
     println(io, "  Library version:  ")
     for line in split(Get_library_version(), '\n')
         println(io, "    ", line)
+    end
+    println(io, "  MPI launcher: ", mpiexec()[1])
+    mpiexec_path = Sys.which(mpiexec()[1])
+    if !isnothing(mpiexec_path)
+        println(io, "  MPI launcher path: ", mpiexec_path)
     end
 end

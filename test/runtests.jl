@@ -26,7 +26,6 @@ end
 _, backend_name = parse_flags!(ARGS, "--backend"; default="CPU", typ=String)
 
 # load test packages to trigger precompilation
-using DoubleFloats
 @static if backend_name == "CUDA"
     Pkg.add("CUDA")
     ENV["JULIA_MPI_TEST_ARRAYTYPE"] = "CuArray"
@@ -49,6 +48,17 @@ elseif backend_name == "AMDGPU"
     import AMDGPU
     AMDGPU.versioninfo()
     ArrayType = AMDGPU.ROCArray
+elseif backend_name == "oneAPI"
+    Pkg.add("oneAPI")
+    ENV["JULIA_MPI_TEST_ARRAYTYPE"] = "oneArray"
+    import oneAPI
+    oneAPI.versioninfo()
+    ArrayType = oneAPI.oneArray
+
+    @info """
+    Running oneAPI tests. Ensure that your MPI implementation is
+    oneAPI-aware using `MPI.has_oneapi` before reporting issues.
+    """
 else
     ArrayType = Array
 end
@@ -65,6 +75,10 @@ if haskey(ENV,"JULIA_MPI_TEST_ABI")
     @test ENV["JULIA_MPI_TEST_ABI"] == MPIPreferences.abi
 end
 
+# Unit tests for MPIPreferences itself.  These don't need to be run with
+# mpiexec, and don't depend on the MPI implementation in use.
+include(joinpath(@__DIR__, "..", "lib", "MPIPreferences", "test", "runtests.jl"))
+
 if Sys.isunix()
     # This test doesn't need to be run with mpiexec.  `mpiexecjl` is currently
     # available only on Unix systems
@@ -78,7 +92,11 @@ istest(f) = endswith(f, ".jl") && startswith(f, "test_") && !in(f, excludefiles)
 testfiles = sort(filter(istest, readdir(testdir)))
 
 @testset "$f" for f in testfiles
-    cmd(n=nprocs) = `$(mpiexec()) -n $n $(Base.julia_cmd()) --startup-file=no $(joinpath(testdir, f))`
+    cmd(n=nprocs) =
+        addenv(`$(mpiexec()) -n $n $(Base.julia_cmd()) --startup-file=no $(joinpath(testdir, f))`,
+               # `JULIA_MPI_TEST_NUM_PROCESSES` is used in `test_gather.jl` to
+               # test number of processes.
+               "JULIA_MPI_TEST_NUM_PROCESSES"=>string(n))
     if f == "test_spawn.jl"
         # Some command as the others, but always use a single process
         run(cmd(1))
@@ -104,6 +122,18 @@ testfiles = sort(filter(istest, readdir(testdir)))
         catch e
             @error """
                    $(f) tests failed.  This may due to the fact this implementation of MPI doesn't support custom error handlers.
+                   See the full error message for more details.  Some messages may have been written above.
+                   """ exception=(e, catch_backtrace())
+            @test_broken false
+        end
+    elseif f == "test_cooperative_wait.jl" && Sys.iswindows()
+        # This test is broken on Windows. We don't know why.
+        try
+            run(cmd())
+        catch e
+            @error """
+                   $(f) tests failed.  Thsi may be because the Windows MPI implementation is quite old;
+                   it appears unsupported and has not seen bug fixes for a long time.
                    See the full error message for more details.  Some messages may have been written above.
                    """ exception=(e, catch_backtrace())
             @test_broken false

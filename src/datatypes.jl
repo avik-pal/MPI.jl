@@ -78,10 +78,22 @@ if it doesn't correspond directly.
 """
 function to_type(datatype::Datatype)
     if MPI.Initialized() && !MPI.Finalized()
-        ptr = get_attr(datatype, JULIA_TYPE_PTR_ATTR[])
-        isnothing(ptr) || return unsafe_pointer_to_objref(ptr)
+        return to_type_raw(datatype.val)
     end
     return nothing
+end
+
+# As `to_type`, but taking a raw `MPI_Datatype` handle.  This is called from
+# inside user-defined reduction callbacks, which run on MPI's stack while a
+# reduction is in progress. We avoid creating a `Datatype` object to avoid
+# allocating memory, and also avoid the unnecessary `Initialized`/`Finalized`
+# queries of `to_type`.
+@inline function to_type_raw(handle::MPI_Datatype)
+    flagref = Ref(Cint(0))
+    attrref = Ref{Ptr{Cvoid}}(C_NULL)
+    API.MPI_Type_get_attr(handle, JULIA_TYPE_PTR_ATTR[], attrref, flagref)
+    flagref[] == 0 && return nothing
+    return unsafe_pointer_to_objref(attrref[])
 end
 
 # "native" MPI datatypes
@@ -91,8 +103,7 @@ const MPIComplex = Union{ComplexF32, ComplexF64}
 const MPILogical = Union{Bool}
 
 # predefined
-_defined_datatype_methods = Set{Type}()
-for (mpiname, T) in [
+const _predefined_datatypes = [
     :INT8_T             => Int8
     :UINT8_T            => UInt8
     :INT16_T            => Int16
@@ -121,47 +132,62 @@ for (mpiname, T) in [
     :C_BOOL             => Bool
 ]
 
+for (mpiname, T) in _predefined_datatypes
     @eval begin
         const $mpiname = Datatype(API.$(Symbol(:MPI_,mpiname))[])
         add_load_time_hook!(LoadTimeHookSetVal($mpiname, API.$(Symbol(:MPI_,mpiname))))
-        if $T ∉ _defined_datatype_methods
-            push!(_defined_datatype_methods, $T)
-            Datatype(::Type{$T}) = $mpiname
-            add_init_hook!(function()
-                @assert Types.size($mpiname) == sizeof($T)
-                set_attr!($mpiname, JULIA_TYPE_PTR_ATTR[], pointer_from_objref($T))
-                end)
-        end
     end
 end
-_defined_datatype_methods = nothing
+
+for (mpiname, T) in unique(last, _predefined_datatypes)
+    @eval begin
+        Datatype(::Type{$T}) = $mpiname
+        add_init_hook!(function()
+            @assert Types.size($mpiname) == sizeof($T)
+            set_attr!($mpiname, JULIA_TYPE_PTR_ATTR[], pointer_from_objref($T))
+            end)
+    end
+end
 
 # Cache the created datatypes. The datatype constructor is often
 # called for the same type, e.g. when the Buffer object is implicitly
 # constructed in MPI.Get. Without the cache, each Get would commit the
 # same datatype over and over again.
 const created_datatypes = IdDict{Type, Datatype}()
+# `IdDict` is not thread-safe, and `Datatype(T)` is on the hot path of most
+# user-facing calls, so all accesses to `created_datatypes` are guarded by this
+# lock. It must be reentrant: `Types.create!` recursively calls `Datatype` on
+# the field types of a struct.
+const created_datatypes_lock = ReentrantLock()
 add_finalize_hook!() do
-    for datatype in values(created_datatypes)
-        free(datatype)
+    @lock created_datatypes_lock begin
+        for datatype in values(created_datatypes)
+            free(datatype)
+        end
     end
 end
 
 function Datatype(::Type{T}) where {T}
     global created_datatypes
-    get!(created_datatypes, T) do
-        datatype = Datatype()
-        # lazily initialize so that it can be safely precompiled
-        function init()
+    datatype = @lock created_datatypes_lock begin
+        get!(created_datatypes, T) do
+            datatype = Datatype()
+            @assert Initialized()
             Types.create!(datatype, T)
             Types.commit!(datatype)
             set_attr!(datatype, JULIA_TYPE_PTR_ATTR[], pointer_from_objref(T))
+            datatype
         end
-        # Initialized() ? init() : add_init_hook!(init)
-        @assert Initialized()
-        init()
-        datatype
     end
+
+    # Make sure the "aligned" size of the type matches the MPI "extent".
+    sz = sizeof(T)
+    al = Base.datatype_alignment(T)
+    mpi_extent = Types.extent(datatype)
+    aligned_size = (0, cld(sz,al)*al)
+    @assert mpi_extent == aligned_size "The MPI extent of type $(T) ($(mpi_extent[2])) does not match the size expected by Julia ($(aligned_size[2]))"
+
+    return datatype
 end
 
 function Base.show(io::IO, datatype::Datatype)
@@ -437,8 +463,10 @@ function create!(newtype::Datatype, ::Type{T}) where {T}
     types = Datatype[]
 
     if isprimitivetype(T)
-        # primitive type
-        szrem = sz = sizeof(T)
+        # This is a primitive type.  Create a type which has size an integer multiple of its
+        # alignment on the Julia side: <https://github.com/JuliaParallel/MPI.jl/issues/853>.
+        al = Base.datatype_alignment(T)
+        szrem = sz = cld(sizeof(T), al) * al
         disp = 0
         for (i,basetype) in (8 => Datatype(UInt64), 4 => Datatype(UInt32), 2 => Datatype(UInt16), 1 => Datatype(UInt8))
             if sz == i

@@ -1,12 +1,12 @@
 """
-    mpiexec(fn)
+    mpiexec()
 
-A wrapper function for the MPI launcher executable. Calls `fn(cmd)`, where `cmd` is a `Cmd` object of the MPI launcher.
+A wrapper function for the MPI launcher executable. Returns a `Cmd` object pointing to the MPI launcher.
 
 # Usage
 
 ```jldoctest
-julia> mpiexec(cmd -> run(`\$cmd -n 3 echo hello world`));
+julia> run(`\$(mpiexec()) -n 3 echo hello world`);
 hello world
 hello world
 hello world
@@ -133,21 +133,9 @@ function Init(;threadlevel=:serialized, finalize_atexit=true, errors_return=true
             # MPI_Finalize is a collective and can act like a barrier (this may
             # be implementation specific). If we are terminating due to a Julia
             # exception, we shouldn't call MPI_Finalize.
-            @static if VERSION >= v"1.9-"
-                # In Julia 1.9 we can access the exitcode from the atexit hook
-                atexit() do exitcode
-                    if exitcode == 0 && !Finalized()
-                        Finalize()
-                    end
-                end
-            else
-                # In Julia 1.8 and earlier we can peek at the current exception,
-                # and only if that field is nothing do we terminate.
-                # This does not work in Julia 1.9 or later.
-                atexit() do
-                    if !Finalized() && ccall(:jl_current_exception, Any, ()) === nothing
-                        Finalize()
-                    end
+            atexit() do exitcode
+                if exitcode == 0 && !Finalized()
+                    Finalize()
                 end
             end
         end
@@ -326,7 +314,7 @@ This can be overridden by setting the `JULIA_MPI_HAS_CUDA` environment variable 
 or `false`.
 
 !!! note
-    For OpenMPI or OpenMPI-based implementations you first need to call [Init()](@ref).
+    For OpenMPI or OpenMPI-based implementations you first need to call [`MPI.Init`](@ref).
 
 See also [`MPI.has_rocm`](@ref) for ROCm support.
 """
@@ -375,6 +363,25 @@ function has_rocm()
 end
 
 """
+    MPI.has_oneapi()
+
+Check if the MPI implementation is known to have oneAPI support.
+
+This can be overridden by setting the `JULIA_MPI_HAS_ONEAPI` environment variable to `true`
+or `false`.
+
+See also [`MPI.has_cuda`](@ref) and [`MPI.has_rocm`](@ref) for CUDA and ROCm support.
+"""
+function has_oneapi()
+    flag = get(ENV, "JULIA_MPI_HAS_ONEAPI", nothing)
+    if flag === nothing
+        return false
+    else
+        return parse(Bool, flag)
+    end
+end
+
+"""
     MPI.has_gpu()
 
 Checks if the MPI implementation is known to have GPU support. Currently this checks for the
@@ -382,8 +389,9 @@ following GPUs:
 
 1. CUDA: via [`MPI.has_cuda`](@ref)
 2. ROCm: via [`MPI.has_rocm`](@ref)
+3. oneAPI: via [`MPI.has_oneapi`](@ref)
 
-See also [`MPI.has_cuda`](@ref) and [`MPI.has_rocm`](@ref) for more fine-grained
-checks.
+See also [`MPI.has_cuda`](@ref), [`MPI.has_rocm`](@ref) and [`MPI.has_oneapi`](@ref) for
+more fine-grained checks.
 """
-has_gpu() = has_cuda() || has_rocm()
+has_gpu() = has_cuda() || has_rocm() || has_oneapi()
